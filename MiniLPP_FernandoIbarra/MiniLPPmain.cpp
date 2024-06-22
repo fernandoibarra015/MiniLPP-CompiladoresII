@@ -74,6 +74,7 @@ int main(int argc, char *argv[])
 
         std::string code = parser.getRoot()->GeneratorCode(parser.getVector());
         runASM(fileASM, code);
+        return 0;
    }
    catch(const std::exception& e)
    {
