@@ -1,0 +1,7 @@
+
+Entero i
+Inicio
+    Para i <- 1 hasta 10 haga
+        Escriba i
+    Fin Para
+Fin

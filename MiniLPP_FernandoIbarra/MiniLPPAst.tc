@@ -1,0 +1,809 @@
+%decls %{
+    // Includes y Usings
+    #include <string>
+    #include <iostream>
+    #include <iomanip>
+    #include <vector>
+    #include <variant>
+    #include <algorithm>
+
+    using values = std::variant<std::string, int>;
+    using StdString = std::string;
+
+    // Estructuras y Alias
+    struct ebp_vars {
+        StdString identifier;
+        StdString ebp;
+        values value;
+    };
+
+    using Vars_epb = std::vector<ebp_vars>;
+
+    struct type_vars {
+        StdString type;
+        StdString vars_ebp;
+    };
+    using Types_vars = std::vector<type_vars>;
+
+    // Declaraciones de funciones
+    void resetCodegen();
+    StdString generateLabel();
+    int getOffset();
+    StdString getType(std::string var);
+    int addOffset();
+    StdString generateLabel();
+%}
+
+%{
+    // Includes adicionales
+    #include "MiniLPPAst.hpp"
+
+    // Variables globales
+    int offset_stmts = 0;
+    int drec = 0;
+    int count_label = 0;
+    Vars_epb vars_ebp;
+    int offset = 4;
+
+    // Implementación de funciones
+    void resetCodegen() {
+        offset = 0;
+        count_label = 0;
+        drec = 0;
+    }
+
+    StdString generateLabel() {
+        std::string temp = "label_" + std::to_string(count_label);
+        count_label += 1;
+        return temp;
+    }
+
+    int getOffset() {
+        return offset;
+    }
+
+    int getOffset_stmt() {
+        return offset_stmts;
+    }
+
+    int addOffset() {
+        return offset += 4;
+    }
+
+    int addOffset_stmt() {
+        return offset_stmts += 4;
+    }
+
+    StdString newTemp() {
+        std::string temp = "T" + std::to_string(drec);
+        drec += 1;
+        return temp;
+    }
+
+    StdString getType(Types_vars& var_type, std::string var) {
+        for (int i = 0; i < var_type.size(); i++) {
+            if (var_type[i].vars_ebp == var) {
+                return var_type[i].type;
+            }
+        }
+        return "";
+    }
+
+    bool Typeis(Types_vars& var_type, std::string var, std::string tipo) {
+        for (int i = 0; i < var_type.size(); i++) {
+            if (var_type[i].vars_ebp == var) {
+                if (var_type[i].type == tipo) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+%}
+
+%option lang = "C++"
+
+%node AstNode %abstract %typedef = {
+    %nocreate StdString place;
+    %nocreate StdString code;
+}
+
+%node Expr AstNode %abstract
+
+%node Program AstNode = {
+    AstNode * declVar;
+    AstNode * declFun;
+    AstNode * inicio;
+}
+
+%node Stmt AstNode %abstract 
+
+%node Null_ Stmt = {
+}
+
+%node BlockStmts Stmt = {
+    AstNode * stmt1;
+    AstNode * stmt2; 
+}
+
+%node Vars_decl Stmt = {
+    AstNode * stmt1;
+    AstNode * stmt2;
+}
+
+%node Assing_stmt Stmt = {
+    Expr * var;
+    AstNode * var_value;
+}
+
+%node For_stmt Stmt = {
+    Assing_stmt * asignacion;
+    Expr * hasta;
+    AstNode * stmtst;
+}
+
+%node Write_stmt Stmt = {
+    AstNode *expr1;
+}
+
+%node If_Stmt Stmt = {
+    AstNode *condi;
+    AstNode *stmt_tr;
+    AstNode *stmt_f;
+}
+
+%node While_stmt Stmt = {
+    AstNode *condi;
+    AstNode *stmt_tr;
+}
+
+%node BinaryExpr Expr %abstract = {
+    Expr *expr1;
+    Expr *expr2;
+}
+
+%node Add_Expr BinaryExpr
+%node Mul_Expr BinaryExpr
+%node Div_Expr BinaryExpr
+%node Sub_Expr BinaryExpr
+%node Mod_Expr BinaryExpr
+
+%node GreaterThan_Expr BinaryExpr
+%node LessThan_Expr BinaryExpr
+%node GreaterThanOrEqual_Expr BinaryExpr
+%node LessThanOrEqual_Expr BinaryExpr
+%node Equal_Expr BinaryExpr
+%node NoEqual_Expr BinaryExpr
+%node Or_Expr BinaryExpr
+%node And_Expr BinaryExpr
+
+%node NumExpr Expr = {
+    int value;
+}
+
+%node IdentExpr Expr = {
+    StdString text;
+}
+
+%node Boolean_Expr Expr = {
+    int booleano;
+}
+
+%node Char_Expr Expr = {
+    char character;
+}
+
+%node Text_Expr Expr = {
+    StdString cadena;
+}
+
+%node ArregloExpr Expr = {
+    StdString txt;
+}
+
+// Operaciones
+%operation %virtual int semantics(AstNode *this)
+%operation %virtual StdString GeneratorCode(AstNode *this,Types_vars& tipos)
+
+// Implementaciones de Operaciones
+
+// Null_
+GeneratorCode(Null_) {
+    place = "";
+    code = "";
+    return "";
+}
+semantics(Null_) {
+    return 0.0;
+}
+
+// Add_Expr
+GeneratorCode(Add_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place + "\n";
+    code += "\tadd eax, " + expr2->place + "\n";
+    code += "\tmov " + place + ", eax\n";
+    return code;
+}
+semantics(Add_Expr) {
+    double v1 = expr1->semantics();
+    double v2 = expr2->semantics();
+    return v1 + v2;
+}
+
+// Mul_Expr
+GeneratorCode(Mul_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\timul eax, " + expr2->place + "\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(Mul_Expr) {
+    double v1 = expr1->semantics();
+    double v2 = expr2->semantics();
+    return v1 * v2;
+}
+
+// Sub_Expr
+GeneratorCode(Sub_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place + "\n";
+    code += "\tsub eax, " + expr2->place + "\n";
+    code += "\tmov " + place + ", eax\n";
+    return code;
+}
+semantics(Sub_Expr) {
+    double v1 = expr1->semantics();
+    double v2 = expr2->semantics();
+    return v1 * v2;
+}
+
+// GreaterThanOrEqual_Expr
+GeneratorCode(GreaterThanOrEqual_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tjl "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(GreaterThanOrEqual_Expr) {
+    double v1 = expr1->semantics();
+    double v2 = expr2->semantics();
+    return v1 * v2;
+}
+
+// LessThanOrEqual_Expr
+GeneratorCode(LessThanOrEqual_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tjg "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(LessThanOrEqual_Expr) {
+    double v1 = expr1->semantics();
+    double v2 = expr2->semantics();
+    return v1 * v2;
+}
+
+// Boolean_Expr
+GeneratorCode(Boolean_Expr) {
+    place = std::to_string(booleano);
+    code = "";
+    return "";
+}
+semantics(Boolean_Expr) {
+    return 0.0;
+}
+
+// IdentExpr
+GeneratorCode(IdentExpr) {
+    bool encontrado = false;
+    for (const auto& var : vars_ebp) {
+        if (var.identifier == text) {
+            encontrado = true;
+            place = var.ebp;
+            break;
+        }
+    }
+    if (!encontrado) {
+        place = "[ebp + " +std::to_string(addOffset()) +"]";
+        vars_ebp.push_back({text, place, 0});
+    }
+    return "";
+}
+semantics(IdentExpr) {
+    return 0;
+}
+
+// Mod_Expr
+GeneratorCode(Mod_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcdq\n\tmov ebx, "+ expr2->place +"\n\tidiv ebx\n";
+    code += "\tmov "+ place + ", edx\n";
+    code += "\tmov eax, edx\n";
+    return code;
+}
+semantics(Mod_Expr) {
+    return 0;
+}
+
+// Or_Expr
+GeneratorCode(Or_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+ "]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tor eax, " + expr2->place + "\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(Or_Expr) {
+    return 0;
+}
+
+// And_Expr
+GeneratorCode(And_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt()) + "]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tand eax, " + expr2->place + "\n";
+    code += "\tmov "+ place + "], eax\n";
+    return code;
+}
+semantics(And_Expr) {
+    return 0;
+}
+
+// Char_Expr
+GeneratorCode(Char_Expr) {
+    int valor_ascii = static_cast<int>(character);
+    place = std::to_string(valor_ascii);
+    code = "";
+    return "";
+}
+semantics(Char_Expr) {
+    return 0.0;
+}
+
+// Text_Expr
+GeneratorCode(Text_Expr) {
+    code = "";
+    return "";
+}
+semantics(Text_Expr) {
+    return 0.0;
+}
+
+// ArregloExpr
+GeneratorCode(ArregloExpr) {
+    return "";
+}
+semantics(ArregloExpr) {
+    return 0.0;
+}
+
+// Equal_Expr
+GeneratorCode(Equal_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tjne "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(Equal_Expr) {
+    return 0;
+}
+
+// NoEqual_Expr
+GeneratorCode(NoEqual_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tje "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(NoEqual_Expr) {
+    return 0;
+}
+
+// NumExpr
+GeneratorCode(NumExpr) {
+    place = std::to_string(value);
+    code = "";
+    return "";
+}
+semantics(NumExpr) {
+    return value;
+}
+
+// Vars_decl
+GeneratorCode(Vars_decl) {
+    stmt1->GeneratorCode(tipos);
+    stmt2->GeneratorCode(tipos);
+    code = stmt1->code + stmt2->code;
+    return code;
+}
+semantics(Vars_decl) {
+    return 0.0;
+}
+
+// For_stmt
+GeneratorCode(For_stmt) {
+    std::string label1 = generateLabel();
+    std::string label3 = generateLabel(); 
+    asignacion->GeneratorCode(tipos);
+    hasta->GeneratorCode(tipos);
+    stmtst->GeneratorCode(tipos);
+    code += asignacion->code;
+    code += label1 + ":\n";
+    code += "\tmov eax, " + asignacion->place + "\n";
+    code += "\tcmp eax, "+hasta->place+"\n";
+    code += "\tjg " + label3 + "\n";
+    code += stmtst->code;
+    code += "\tadd " + asignacion->place + ", 1\n";
+    code += "\tjmp " + label1 + "\n";
+    code += label3 + ":\n";
+    return code;
+}
+semantics(For_stmt) {
+    return 0;
+}
+
+// While_stmt
+GeneratorCode(While_stmt) {
+    std::string label1 = generateLabel();
+    std::string label3 = generateLabel(); 
+    condi->GeneratorCode(tipos);
+    stmt_tr->GeneratorCode(tipos);
+    code += label1 + ":\n";
+    code += condi->code;
+    code += "\tmov eax, " + condi->place + "\n";
+    code += "\tcmp eax, 0\n";
+    code += "\tje " + label3 + "\n";
+    code += stmt_tr->code;
+    code += "\tjmp " + label1 + "\n";
+    code += label3 + ":\n";
+    return code;
+}
+semantics(While_stmt) {
+    return 0.0;
+}
+
+// Div_Expr
+GeneratorCode(Div_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcdq\n\tmov ebx, "+ expr2->place +"\n\tidiv ebx\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(Div_Expr) {
+    return 0.0;
+}
+
+// GreaterThan_Expr
+GeneratorCode(GreaterThan_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tjle "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(GreaterThan_Expr) {
+    return 0.0;
+}
+
+// LessThan_Expr
+GeneratorCode(LessThan_Expr) {
+    place = "[ebp - "+std::to_string(addOffset_stmt())+"]";
+    expr1->GeneratorCode(tipos);
+    expr2->GeneratorCode(tipos);
+    code += expr1->code + expr2->code;
+    code += "\tmov eax, " + expr1->place +"\n\tcmp eax, " + expr2->place + "\n";
+    std::string label = generateLabel();
+    std::string final = generateLabel();
+    code += "\tjge "+ label +"\n";
+    code += "\tmov eax, 1\n\tjmp "+final+"\n"+label+": \n\t mov eax, 0\n"+final+":\n";
+    code += "\tmov "+ place + ", eax\n";
+    return code;
+}
+semantics(LessThan_Expr) {
+    return 0.0;
+}
+
+// Assing_stmt
+GeneratorCode(Assing_stmt) {
+    bool encontrado = false;
+    for (const auto& vari : vars_ebp) {
+        if (vari.identifier == static_cast<IdentExpr *>(var)->text) {
+            encontrado = true;
+            var->GeneratorCode(tipos);
+            break;
+        }
+    }
+    if (!encontrado) {
+        std::string msgcompleto = "Error: variable no declarada " + static_cast<IdentExpr *>(var)->text;
+        throw std::runtime_error(msgcompleto.c_str());
+    }
+    if (var_value->isA(NumExpr_kind)) {
+        if (Typeis(tipos, static_cast<IdentExpr *>(var)->text, "Entero")) {
+            var_value->GeneratorCode(tipos);
+        } else {
+            std::string msgcompleto = "Error: La Variable " + static_cast<IdentExpr *>(var)->text + " no es de tipo Entero";
+            throw std::runtime_error(msgcompleto.c_str());
+        }
+    } else if (var_value->isA(IdentExpr_kind)) {
+        for (const auto& vari : vars_ebp) {
+            if (vari.identifier == static_cast<IdentExpr *>(var)->text) {
+                encontrado = true;
+                std::string tipo = getType(tipos, static_cast<IdentExpr *>(var_value)->text);
+                if (Typeis(tipos, static_cast<IdentExpr *>(var)->text, tipo)) {
+                    var_value->GeneratorCode(tipos);
+                } else {
+                    std::string msgcompleto = "Error: La Variable " + static_cast<IdentExpr *>(var)->text + " no es de tipo "+tipo;
+                    throw std::runtime_error(msgcompleto.c_str());
+                }
+                break;
+            }
+        }
+        if (!encontrado) {
+            std::string msgcompleto = "Error: La Variable " + static_cast<IdentExpr *>(var)->text + " no esta declarada";
+            throw std::runtime_error(msgcompleto.c_str());
+        }
+    } else if (var_value->isA(Char_Expr_kind)) {
+        if (Typeis(tipos, static_cast<IdentExpr *>(var)->text, "Caracter")) {
+            var_value->GeneratorCode(tipos);
+        } else {
+            std::string msgcompleto = "Error: La Variable " + static_cast<IdentExpr *>(var)->text + " no es de tipo Caracter";
+            throw std::runtime_error(msgcompleto.c_str());
+        }
+    } else if (var_value->isA(Boolean_Expr_kind)) {
+        if (Typeis(tipos, static_cast<IdentExpr *>(var)->text, "Booleano")) {
+            var_value->GeneratorCode(tipos);
+        } else {
+            std::string msgcompleto = "Error: La Variable " + static_cast<IdentExpr *>(var)->text + " no es de tipo Booleano";
+            throw std::runtime_error(msgcompleto.c_str());
+        }
+    } else {
+        var_value->GeneratorCode(tipos);
+    }
+    place = var->place;
+    code += var_value->code;
+    code += "\tmov eax, " + var_value->place + "\n";
+    code += "\tmov " + var->place + ", eax\n";
+    return "";
+}
+semantics(Assing_stmt) {
+    return 0.0;
+}
+
+// Write_stmt
+GeneratorCode(Write_stmt) {
+    bool encontrado = false;
+    if (expr1->isA(NumExpr_kind)) {
+        expr1->GeneratorCode(tipos);
+        code += expr1->code;
+        code += "\tmov eax, 1\n";
+        code += "\tmov ebx, " + expr1->place + "\n";
+    } else if (expr1->isA(IdentExpr_kind)) {
+        std::string tipo = getType(tipos, static_cast<IdentExpr *>(expr1)->text);
+        for (const auto& vari : vars_ebp) {
+            if (vari.identifier == static_cast<IdentExpr *>(expr1)->text) {
+                encontrado = true;
+                expr1->GeneratorCode(tipos);
+                break;
+            }
+        }
+        if (!encontrado) {
+            std::string msgcompleto = "Error: variable no declarada " + static_cast<IdentExpr *>(expr1)->text;
+            throw std::runtime_error(msgcompleto.c_str());
+        }
+        code += expr1->code;
+        if (tipo == "Entero") {
+            code += "\tmov eax, 1\n";
+            code += "\tmov ebx, " + expr1->place + "\n";
+        } else if (tipo == "Caracter") {
+            code += "\tmov eax, 11\n";
+            code += "\tmov ebx, " + expr1->place + "\n";
+        } else if (tipo == "Booleano") {
+            code += "\tmov esi, 0x10000000\n";
+            code += "\tlea ebx, [esi+4]\n";
+            std::string label1 = generateLabel();
+            std::string label2 = generateLabel();
+            code += "\tmov eax, "+ expr1->place +"\n";
+            code += "\tcmp eax, 0\n";
+            code += "\tje "+ label1 +"\n";
+            code += "\tmov dword [ebx], 0x64726576\n";
+            code += "\tmov dword [ebx + 4], 0x72656461\n";
+            code += "\tmov dword  [ebx + 8], 0x6f\n";
+            code += "\tmov dword  [ebx + 9], 0\n";
+            code += "\tjmp "+ label2 +"\n";
+            code += label1 + ":\n";
+            code += "\tmov dword [ebx], 0x736c6166\n";
+            code += "\tmov dword [ebx + 4], 0x6f\n";
+            code += "\tmov dword  [ebx + 5], 0\n";
+            code += label2 + ":\n";
+            code += "\tmov eax, 4\n";
+            code += "\tlea ebx, [esi+4]\n";
+        }
+    } else if (expr1->isA(Char_Expr_kind)) {
+        expr1->GeneratorCode(tipos);
+        code += expr1->code;
+        code += "\tmov eax, 11\n";
+        code += "\tmov ebx, " + expr1->place + "\n";
+    } else if (expr1->isA(Boolean_Expr_kind)) {
+        expr1->GeneratorCode(tipos);
+        code += "\tmov esi, 0x10000000\n";
+        code += "\tlea ebx, [esi+4]\n";
+        if (expr1->place == "1") {
+            code += "\tmov dword [ebx], 0x64726576\n";
+            code += "\tmov dword [ebx + 4], 0x72656461\n";
+            code += "\tmov dword  [ebx + 8], 0x6f\n";
+            code += "\tmov dword  [ebx + 9], 0\n";
+        } else {
+            code += "\tmov dword [ebx], 0x736c6166\n";
+            code += "\tmov dword [ebx + 4], 0x6f\n";
+            code += "\tmov dword  [ebx + 5], 0\n";
+        }
+        code += "\tmov eax, 4\n";
+        code += "\tlea ebx, [esi+4]\n";
+    } else if (expr1->isA(Text_Expr_kind)) {
+        expr1->GeneratorCode(tipos);
+        code += "\tmov esi, 0x10000000\n";
+        code += "\tlea ebx, [esi+4]\n";
+        int i = 0;
+        std::stringstream ss;
+        for (i = 0; static_cast<Text_Expr *>(expr1)->cadena[i] != '\0'; ++i) {
+            if (i % 4 == 0) {
+                code += "\n\tmov [ebx + "+std::to_string(i)+"], 0x";
+            }
+            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(static_cast<Text_Expr *>(expr1)->cadena[i]);
+            if (i >= 0 && (i-3) % 4 == 0 || i == static_cast<Text_Expr *>(expr1)->cadena.size() - 1) {
+                std::vector<std::string> pares;
+                for (size_t i = 0; i < ss.str().length(); i += 2) {
+                    pares.push_back(ss.str().substr(i, 2));
+                }
+                std::reverse(pares.begin(), pares.end());
+                std::ostringstream resultado;
+                for (const auto& par : pares) {
+                    resultado << par;
+                }
+                code += resultado.str();
+                ss.str("");
+            }
+        }
+        code += "\n\tmov [ebx +"+std::to_string(i)+"], 0\n";
+        code += "\tmov eax, 4\n";
+        code += "\tlea ebx, [esi+4]\n";
+    } else {
+        expr1->GeneratorCode(tipos);
+        code += expr1->code;
+        code += "\tmov eax, 1\n";
+        code += "\tmov ebx, " + expr1->place + "\n";
+    }
+    code += "\tint 0x80\n";
+    code += "\tmov eax, 11\n";
+    code += "\tmov ebx, 10\n";
+    code += "\tint 0x80\n";
+    return code;
+}
+semantics(Write_stmt) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(2) << expr1->semantics();
+    std::string cadena = stream.str();
+    return 0.0;
+}
+
+// BlockStmts
+GeneratorCode(BlockStmts) {
+    stmt1->GeneratorCode(tipos);
+    stmt2->GeneratorCode(tipos);
+    code = stmt1->code + stmt2->code;
+    return code;
+}
+semantics(BlockStmts) {
+    stmt1->semantics();
+    stmt2->semantics();
+    return 0.0;
+}
+
+// If_Stmt
+GeneratorCode(If_Stmt) {
+    std::string label1 = generateLabel();
+    std::string label3 = generateLabel();
+    std::string label4 = generateLabel();
+    condi->GeneratorCode(tipos);
+    stmt_tr->GeneratorCode(tipos);
+    stmt_f->GeneratorCode(tipos);
+    code += label1 + ":\n";
+    code += condi->code;
+    code += "\tmov eax, " + condi->place + "\n";
+    code += "\tcmp eax, 0\n";
+    code += "\tje " + label3 + "\n";
+    code += stmt_tr->code;
+    code += "\tjmp "+ label4 +"\n";
+    code += label3 + ":\n";
+    code += stmt_f->code;
+    code += label4 + ":\n";
+    return code;
+}
+semantics(If_Stmt) {
+    if (condi->semantics() != 0.0) {
+        stmt_tr->semantics();
+    } else {
+        stmt_f->semantics();
+    }
+    return 0.0;
+}
+
+// Program
+GeneratorCode(Program) {
+    declVar->GeneratorCode(tipos);
+    declFun->GeneratorCode(tipos);
+    inicio->GeneratorCode(tipos);
+    for (const auto& var : vars_ebp) {
+        code += "\tpush 0\n";
+    }
+    code += "\tcall inicio\n";
+    code += "\tadd esp, " + std::to_string(getOffset() - 4) + "\n";
+    code += "\t#stop\n";
+    code += "inicio:\n";
+    code += "\tpush ebp\n";
+    code += "\tmov ebp, esp\n";
+    code += "\tsub esp, " + std::to_string(getOffset_stmt()) + "\n";
+    code += inicio->code;
+    code += "\tleave\n\tret\n";
+    return code;
+}
+semantics(Program) {
+    declVar->semantics();
+    declFun->semantics();
+    inicio->semantics();
+    return 0.0;
+}
